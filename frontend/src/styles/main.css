@@ -1,0 +1,167 @@
+/* 录音棚场次与 Take 标记台 · 全局样式 */
+:root {
+  --studio-ink: #1d2b3a;
+  --studio-primary: #2f6f8f;
+  --studio-bg: #f4f7f9;
+  --studio-border: #e2ebf1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--studio-bg);
+  color: var(--studio-ink);
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.page__subtitle {
+  margin: 0;
+  color: #6b7c8c;
+  font-size: 13px;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.muted {
+  color: #8c99a5;
+  font-size: 12px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+}
+
+.filter-bar__main {
+  flex: 1 1 520px;
+}
+
+.filter-bar__label {
+  font-size: 13px;
+  color: #6b7c8c;
+}
+
+.stat-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 138px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid var(--studio-border);
+  border-left: 4px solid #6b7c8c;
+  border-radius: 10px;
+}
+
+.stat-badge__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.stat-badge__body {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.stat-badge__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1d2b3a;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-badge__suffix {
+  font-size: 12px;
+  color: #8c99a5;
+}
+
+.empty-panel {
+  padding: 32px 16px;
+  background: #fbfcfe;
+  border: 1px dashed #cfdce8;
+  border-radius: 12px;
+}
+
+.empty-panel__title {
+  font-size: 15px;
+  color: #2b3a47;
+}
+
+.empty-panel__desc {
+  font-size: 12px;
+  color: #8c99a5;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #a3b1bd;
+}
+
+.drag-row {
+  cursor: grab;
+}
+
+.drag-row.is-dragging,
+.is-dragging {
+  opacity: 0.45;
+}
+
+.is-over {
+  border-top: 2px dashed var(--studio-primary);
+}
+
+.take-row-selected {
+  background: #eef6fb;
+}
