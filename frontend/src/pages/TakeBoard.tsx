@@ -22,6 +22,7 @@ import FilterBar from '@/components/common/FilterBar';
 import StatBadge from '@/components/common/StatBadge';
 import TakeBadge from '@/components/common/TakeBadge';
 import EmptyPanel from '@/components/common/EmptyPanel';
+import ConflictCenter from '@/components/common/ConflictCenter';
 import { useIdbTable } from '@/hooks/useIdbTable';
 import { useTakeFilter } from '@/hooks/useTakeFilter';
 import { useTakeStore } from '@/stores/takeStore';
@@ -262,6 +263,8 @@ export default function TakeBoard() {
         <StatBadge label="有问题的条次" value={totals.issueCount} suffix="条" tone="danger" icon="warning" />
         <StatBadge label="合计时长" value={totals.durationText} tone="default" icon="trend" />
       </div>
+
+      <ConflictCenter tables={['takes']} title="Take 合并冲突待裁决" />
 
       <FilterBar
         modelValue={filters}

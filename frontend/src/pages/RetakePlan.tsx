@@ -28,7 +28,7 @@ import {
   db,
   countAll,
   exportSnapshot,
-  importSnapshot,
+  mergeSnapshot,
   resetDatabase,
   updateRetake,
   completeRetake,
@@ -46,6 +46,7 @@ import { RETAKE_STATES, createEmptyRetake, type Retake } from '@/types/retake';
 import { buildRow } from '@/hooks/useIdbTable';
 import { buildSessionSheet, downloadJson, parseSheet, serializeSheet, type SessionSheet } from '@/utils/export';
 import { formatDuration, totalDuration } from '@/utils/timecode';
+import ConflictCenter from '@/components/common/ConflictCenter';
 
 export default function RetakePlan() {
   const retakes = useIdbTable<RetakeRow>(db.retakes);
@@ -165,15 +166,23 @@ export default function RetakePlan() {
       if (!Array.isArray((parsed as unknown as { songs?: unknown[] }).songs)) {
         throw new Error('缺少 songs 数组字段，不是本应用的备份文件');
       }
-      await importSnapshot(parsed);
+      // 逐条合并：单事务完成，任何一步失败都会回滚成导入前的样子
+      const result = await mergeSnapshot(parsed);
+      const { added, updated, unchanged, conflicted } = result.summary;
       setCounts(await countAll());
       setImportOpen(false);
       setImportText('');
-      message.success('备份已导入');
+      if (conflicted > 0) {
+        message.warning(
+          `合并完成：新增 ${added} 条、并入 ${updated} 条、无变化 ${unchanged} 条；${conflicted} 条两边都改过，已两版并列待裁决`
+        );
+      } else {
+        message.success(`合并完成：新增 ${added} 条、并入 ${updated} 条、无变化 ${unchanged} 条`);
+      }
     } catch (importError) {
       const text = importError instanceof Error ? importError.message : '导入失败';
       setError(text);
-      message.error(`导入失败：${text}`);
+      message.error(`合并失败，已恢复为导入前的样子：${text}`);
     }
   }
 
@@ -216,6 +225,8 @@ export default function RetakePlan() {
       </div>
 
       {error ? <Alert type="error" showIcon message={error} closable onClose={() => setError(null)} /> : null}
+
+      <ConflictCenter title="导入合并冲突待裁决" />
 
       <Row gutter={16}>
         <Col xs={24} xl={16}>
@@ -360,6 +371,9 @@ export default function RetakePlan() {
                 <Descriptions.Item label="优选 / 补录">
                   {counts.picks ?? 0} / {counts.retakes ?? 0}
                 </Descriptions.Item>
+                <Descriptions.Item label="待裁决冲突">
+                  {counts.conflicts ?? 0} 条
+                </Descriptions.Item>
                 <Descriptions.Item label="记录表生成时间">
                   {sheet ? sheet.exportedAt.slice(0, 19).replace('T', ' ') : '—'}
                 </Descriptions.Item>
@@ -372,7 +386,7 @@ export default function RetakePlan() {
                     setImportOpen(true);
                   }}
                 >
-                  导入备份
+                  导入备份（逐条合并）
                 </Button>
                 <Button
                   danger
@@ -425,14 +439,21 @@ export default function RetakePlan() {
 
       <Modal
         open={importOpen}
-        title="导入本地库备份"
+        title="逐条合并导入本地库备份"
         onCancel={() => setImportOpen(false)}
         onOk={doImport}
-        okText="确认导入（覆盖现有数据）"
+        okText="逐条合并导入"
         cancelText="取消"
         width={640}
       >
         {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="按条合并，不再整包覆盖"
+          description="同一条先比行修订号：只有一边动过的直接并入；两边都改过同一条时，两版并列保留，请到 Take 标记台或本页下方的冲突裁决台挑一版再落地。合并若失败会整体回滚为导入前的样子。"
+        />
         <Input.TextArea
           rows={10}
           value={importText}
