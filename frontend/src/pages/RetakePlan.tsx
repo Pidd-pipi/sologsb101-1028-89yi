@@ -22,13 +22,13 @@ import { DownloadOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icon
 import StatBadge from '@/components/common/StatBadge';
 import EmptyPanel from '@/components/common/EmptyPanel';
 import TakeBadge from '@/components/common/TakeBadge';
+import MergeConflictPanel from '@/components/common/MergeConflictPanel';
 import { useIdbTable } from '@/hooks/useIdbTable';
 import { useProjectStore } from '@/stores/projectStore';
 import {
   db,
   countAll,
   exportSnapshot,
-  importSnapshot,
   resetDatabase,
   updateRetake,
   completeRetake,
@@ -36,12 +36,15 @@ import {
   removeRetake,
   DB_NAME,
   DB_SCHEMA_VERSION,
+  type DatabaseSnapshot,
   type ProjectRow,
   type RetakeRow,
   type SessionRow,
   type SongRow,
   type TakeRow
 } from '@/utils/db';
+import { mergeSnapshot, resolveMergeConflict } from '@/utils/merge';
+import type { ConflictChoice, MergeConflict, MergeReport } from '@/types/merge';
 import { RETAKE_STATES, createEmptyRetake, type Retake } from '@/types/retake';
 import { buildRow } from '@/hooks/useIdbTable';
 import { buildSessionSheet, downloadJson, parseSheet, serializeSheet, type SessionSheet } from '@/utils/export';
@@ -157,23 +160,47 @@ export default function RetakePlan() {
 
   const [importText, setImportText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeReport, setMergeReport] = useState<MergeReport | null>(null);
+  const conflicts = useIdbTable<MergeConflict>(db.mergeConflicts, (a, b) => b.createdAt - a.createdAt);
 
+  /** 逐条合并导入：只有一边动过的直接并进来，两边都改过的两版并列待落地；失败回滚成导入前的样子 */
   async function doImport(): Promise<void> {
     setError(null);
+    setMerging(true);
     try {
-      const parsed = parseSheet(importText) as unknown as Awaited<ReturnType<typeof exportSnapshot>>;
+      const parsed = parseSheet(importText) as unknown as DatabaseSnapshot;
       if (!Array.isArray((parsed as unknown as { songs?: unknown[] }).songs)) {
         throw new Error('缺少 songs 数组字段，不是本应用的备份文件');
       }
-      await importSnapshot(parsed);
+      const report = await mergeSnapshot(parsed);
+      setMergeReport(report);
       setCounts(await countAll());
       setImportOpen(false);
       setImportText('');
-      message.success('备份已导入');
+      if (report.total.conflicts > 0) {
+        message.warning(`合并完成，${report.total.conflicts} 条两版并列的冲突请在下方挑一版落地`);
+      } else {
+        message.success(
+          `合并完成：新增 ${report.total.inserted} · 更新 ${report.total.updated} · 保留本地 ${report.total.kept} · 未变 ${report.total.same}`
+        );
+      }
     } catch (importError) {
       const text = importError instanceof Error ? importError.message : '导入失败';
       setError(text);
-      message.error(`导入失败：${text}`);
+      message.error(`合并失败，已恢复成导入前的样子：${text}`);
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  /** 冲突落地：人挑一版之后才写回业务表 */
+  async function handleResolve(id: string, choice: ConflictChoice): Promise<void> {
+    try {
+      await resolveMergeConflict(id, choice);
+      message.success(choice === 'incoming' ? '已采用导入版并落地' : '已保留本地版');
+    } catch (resolveError) {
+      message.error(`落地失败：${resolveError instanceof Error ? resolveError.message : '未知错误'}`);
     }
   }
 
@@ -183,7 +210,8 @@ export default function RetakePlan() {
         <div>
           <h2 className="page__title">补录计划与结构版本导出</h2>
           <p className="page__subtitle">
-            本地库 {DB_NAME}（结构版本 v{DB_SCHEMA_VERSION}）· 补录完成后自动联动曲目录制状态。
+            本地库 {DB_NAME}（结构版本 v{DB_SCHEMA_VERSION}）· 导入备份按行修订号逐条合并，不再整包覆盖；
+            补录完成后自动联动曲目录制状态。
           </p>
         </div>
         <Space>
@@ -216,6 +244,24 @@ export default function RetakePlan() {
       </div>
 
       {error ? <Alert type="error" showIcon message={error} closable onClose={() => setError(null)} /> : null}
+
+      {mergeReport ? (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type={mergeReport.total.conflicts > 0 ? 'warning' : 'success'}
+          showIcon
+          closable
+          onClose={() => setMergeReport(null)}
+          message="上次合并结果（逐条合并，未整包覆盖）"
+          description={
+            `新增 ${mergeReport.total.inserted} 条 · 更新 ${mergeReport.total.updated} 条 · ` +
+            `保留本地 ${mergeReport.total.kept} 条 · 未变 ${mergeReport.total.same} 条 · ` +
+            `两版并列待落地 ${mergeReport.total.conflicts} 条`
+          }
+        />
+      ) : null}
+
+      <MergeConflictPanel conflicts={conflicts} onResolve={handleResolve} />
 
       <Row gutter={16}>
         <Col xs={24} xl={16}>
@@ -425,14 +471,19 @@ export default function RetakePlan() {
 
       <Modal
         open={importOpen}
-        title="导入本地库备份"
+        title="导入备份并逐条合并"
         onCancel={() => setImportOpen(false)}
         onOk={doImport}
-        okText="确认导入（覆盖现有数据）"
+        okText="确认导入（逐条合并）"
         cancelText="取消"
+        confirmLoading={merging}
         width={640}
       >
         {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          同一条先比行修订号：只有一边动过的直接并进来；两边都改动过的两版并列留着，等挑一版再落地；
+          合并失败会恢复成导入前的样子。
+        </Typography.Paragraph>
         <Input.TextArea
           rows={10}
           value={importText}

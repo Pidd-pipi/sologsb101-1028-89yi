@@ -47,7 +47,7 @@ export function useIdbTable<T extends IdbRecord>(
   return rows;
 }
 
-/** 带 id / 修订号 / 时间戳的持久化行 */
+/** 带 id / 修订号 / 时间戳的持久化行（revision 是逐行改动计数，逐条合并导入靠它比较先后） */
 export interface StampedRow {
   id: string;
   revision: number;
@@ -55,7 +55,7 @@ export interface StampedRow {
   updatedAt: number;
 }
 
-/** 组装一行带 id / 修订号 / 时间戳的持久化记录 */
+/** 组装一行带 id / 初始修订号 / 时间戳的持久化记录（之后每次改动由 db 层把 revision +1） */
 export function buildRow<T extends object>(payload: T, prefix: string): T & StampedRow {
   const now = Date.now();
   return {

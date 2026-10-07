@@ -57,6 +57,7 @@ npm install
 npm run dev        # 开发服务器 http://localhost:22828
 npm run build      # 类型检查 + 生产构建，产物在 frontend/dist
 npm run preview    # 本地预览构建产物（http://localhost:22828）
+npm test           # 合并逻辑单测（vitest + fake-indexeddb）
 ```
 
 ---
@@ -69,7 +70,7 @@ npm run preview    # 本地预览构建产物（http://localhost:22828）
 | `/sessions` | 场次安排与参与乐手 | Session、Song | 按日期与棚号排期、**同棚号同时段冲突真实拦截并列出占用场次**、乐手席位统计、增删改 |
 | `/takes` | Take 标记台 | Take、Session | 录入起止时间码（校验先后、重叠提示）、同场次 Take 号自动递增、问题标签与评级、**表格多选批量改评级**、时间码区间筛选 |
 | `/picks` | 优选 Take 汇总 | Pick、Take | 从「可用」条次中挑选、**拖拽卡片 + 上下移调整剪接顺序**、自动生成剪接清单与合计时长、备注编辑 |
-| `/retakes` | 补录计划与导出 | Retake 及全部模型 | 由问题 Take 一键生成补录、状态流转与完成联动曲目状态、场次记录表导出、本地库版本查看与整库导入导出 |
+| `/retakes` | 补录计划与导出 | Retake 及全部模型 | 由问题 Take 一键生成补录、状态流转与完成联动曲目状态、场次记录表导出、本地库版本查看、整库导出与**逐条合并导入**（含冲突两版并列待落地） |
 
 ---
 
@@ -89,11 +90,12 @@ sologsb101-1028/
     ├── public/favicon.svg
     └── src/
         ├── main.tsx  App.tsx  vite-env.d.ts
-        ├── types/              # project.ts song.ts session.ts take.ts pick.ts retake.ts filter.ts
+        ├── types/              # project.ts song.ts session.ts take.ts pick.ts retake.ts merge.ts filter.ts
         ├── stores/             # projectStore sessionStore takeStore pickStore
-        ├── components/common/  # TakeBadge.tsx FilterBar.tsx StatBadge.tsx EmptyPanel.tsx
+        ├── components/common/  # TakeBadge.tsx FilterBar.tsx StatBadge.tsx EmptyPanel.tsx MergeConflictPanel.tsx
         ├── hooks/              # useTakeFilter.ts useIdbTable.ts
-        ├── utils/              # timecode.ts db.ts export.ts seed.ts uuid.ts
+        ├── utils/              # timecode.ts db.ts merge.ts export.ts seed.ts uuid.ts
+        │   └── __tests__/      # merge.test.ts（逐条合并 / 回滚 / 清单重算 / 升级回填）
         ├── pages/              # ProjectList SessionPlan TakeBoard PickSummary RetakePlan
         ├── styles/main.css
         ├── router/index.tsx    # 路由表（懒加载页面 + App 布局）
@@ -105,8 +107,15 @@ sologsb101-1028/
 
 ## 六、数据存储说明
 
-- **IndexedDB 库名**：`gbstudiotake-db`（Dexie 封装），结构版本号 `version(1)`，并带 `upgrade()` 迁移逻辑（为历史行补齐行修订号与时间戳）。
-- **分表存储**：`projects` 项目、`songs` 曲目、`sessions` 场次、`takes` 条次、`picks` 优选、`retakes` 补录，共 6 张表；每行带 `revision` / `createdAt` / `updatedAt`。
+- **IndexedDB 库名**：`gbstudiotake-db`（Dexie 封装），结构版本号 `version(2)`，并带 `upgrade()` 迁移逻辑（为没有修订号的历史行按现有值回填 `revision` / `createdAt` / `updatedAt`，回填后再参与逐条合并）。
+- **分表存储**：`projects` 项目、`songs` 曲目、`sessions` 场次、`takes` 条次、`picks` 优选、`retakes` 补录六张业务表，外加 `mergeConflicts` 合并冲突暂存表；业务行每行带 `revision` / `createdAt` / `updatedAt`。
+- **行修订号**：`revision` 是逐行改动计数——新建为 1，之后每次改动 +1。两台电脑离线各改一份备份后，合并就靠它判断同一行谁先谁后。
+- **逐条合并导入**（`utils/merge.ts`）：导入备份不再整包覆盖，而是逐条比对——
+  - 同一条先比行修订号：只有一边动过（修订号一高一低）→ 直接并入高的一版；
+  - 两边都改动过同一条（修订号相同但内容不同）→ 两版并列存进 `mergeConflicts`，在补录页的冲突面板里挑「保留本地版 / 采用导入版」后才落地，落地时修订号抬到两版之上，选择随下次导出传播；
+  - 整个合并跑在单个事务里，任何一步失败都会回滚成导入前的样子；
+  - 没有修订号的旧备份行先按现有值回填，再参与合并比较。
+- **评级联动**：Take 评级一改动（含合并与冲突落地），剪接清单立刻重算——不再「可用」的条次自动移出优选并重排顺序，各页统计数字由 liveQuery 订阅驱动自动重算。
 - **首屏自动播种**：`utils/db.ts` 的 `initDatabase()` 在 `projects` 表为空时调用 `seedDatabase()`，灌入互相引用的三层演示数据（项目 → 曲目 → 场次 → Take → 优选 / 补录），保证 5 个页面首次打开都有内容；播种幂等，清空后重进会重新播种。
 - **时间码规则**：格式 `HH:MM:SS:FF`，帧率 25 帧；`utils/timecode.ts` 提供互转、时长汇总、重叠检测与 Take 号自动递增。
 - **无后端**：没有 API 服务、没有数据库容器；容器本身无状态，不挂载任何卷。

@@ -211,8 +211,11 @@ export default function TakeBoard() {
     const clash = siblings.find((take) => isOverlapping(values.startTc, values.endTc, take.startTc, take.endTc));
     setError(null);
     if (editing) {
-      await editTake(editing.id, values);
+      const pruned = await editTake(editing.id, values);
       message.success('条次已更新');
+      if (pruned > 0) {
+        message.warning(`评级已改，剪接清单已重算：移出 ${pruned} 条优选`);
+      }
     } else {
       await createTake(values);
       message.success('条次已标记');
@@ -301,8 +304,11 @@ export default function TakeBoard() {
               disabled={selectedIds.length === 0}
               onChange={(value) => {
                 void (async () => {
-                  await batchGrade(selectedIds, value as TakeGrade);
+                  const pruned = await batchGrade(selectedIds, value as TakeGrade);
                   message.success(`已将 ${selectedIds.length} 条改为「${value}」`);
+                  if (pruned > 0) {
+                    message.warning(`剪接清单已重算：移出 ${pruned} 条优选`);
+                  }
                 })();
               }}
             />

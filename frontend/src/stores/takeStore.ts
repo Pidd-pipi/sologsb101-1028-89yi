@@ -17,9 +17,11 @@ interface TakeState {
   toggleSelected: (id: string) => void;
   setSelected: (ids: string[]) => void;
   createTake: (payload: Omit<Take, 'id'>) => Promise<string>;
-  editTake: (id: string, patch: Partial<Take>) => Promise<void>;
+  /** 返回被移出剪接清单的优选条数（评级改动会触发清单重算） */
+  editTake: (id: string, patch: Partial<Take>) => Promise<number>;
   deleteTake: (id: string) => Promise<void>;
-  batchGrade: (ids: string[], grade: Take['grade']) => Promise<void>;
+  /** 返回被移出剪接清单的优选条数 */
+  batchGrade: (ids: string[], grade: Take['grade']) => Promise<number>;
 }
 
 export const useTakeStore = create<TakeState>()((set, get) => ({
@@ -41,15 +43,16 @@ export const useTakeStore = create<TakeState>()((set, get) => ({
     return row.id;
   },
   editTake: async (id, patch) => {
-    await updateTake(id, patch);
+    return updateTake(id, patch);
   },
   deleteTake: async (id) => {
     await removeTake(id);
     set((state) => ({ selectedIds: state.selectedIds.filter((item) => item !== id) }));
   },
   batchGrade: async (ids, grade) => {
-    await bulkUpdateGrade(ids, grade);
+    const pruned = await bulkUpdateGrade(ids, grade);
     set({ selectedIds: [] });
     void get();
+    return pruned;
   }
 }));
